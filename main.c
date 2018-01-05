@@ -1,4 +1,9 @@
 
+//
+// Parts of this file that I did not write are part of the GNU ARM Eclipse distribution, and are identified herein.
+// Copyright (c) 2014 Liviu Ionescu.
+//
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "diag/Trace.h"
