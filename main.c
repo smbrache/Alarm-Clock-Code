@@ -1,9 +1,3 @@
-//
-// This file is part of the GNU ARM Eclipse distribution.
-// Copyright (c) 2014 Liviu Ionescu.
-//
-
-// ----------------------------------------------------------------------------
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,53 +21,37 @@
 #pragma GCC diagnostic ignored "-Wreturn-type"
 
 //Define button i/o pins
-#define button_hour			(GPIO_PIN_4)
+#define button_hour		(GPIO_PIN_4)
 #define button_minute		(GPIO_PIN_5)
-#define button_set_time	(GPIO_PIN_8)
+#define button_set_time		(GPIO_PIN_8)
 #define button_set_alarm	(GPIO_PIN_9)
-#define button_snooze	(GPIO_PIN_11)
-// ----------------------------------------------------------------------------
-//
-// Standalone STM32F4 Simple Alarm Clock Stub Code
-//
-// This code just plays an MP3 file off of a connected USB flash drive.
-//
-// Trace support is enabled by adding the TRACE macro definition.
-// By default the trace messages are forwarded to the DEBUG output,
-// but can be rerouted to any device or completely suppressed, by
-// changing the definitions required in system/src/diag/trace_impl.c
-// (currently OS_USE_TRACE_ITM, OS_USE_TRACE_SEMIHOSTING_DEBUG/_STDOUT).
-//
+#define button_snooze		(GPIO_PIN_11)
+
+// This code implements an alarm clock on the STM32f407 microcontroller, with the use of push buttons, 
+// a speaker, and a seven segment LED display. This program allows the user of the alarm clock to set 
+// the time of the alarm and the current time, to snooze the alarm or turn it off completely, and plays 
+// an MP3 file from a USB thumb drive at the time the alarm is set to go off.
 
 void SetTime(void), SetAlarm(void), Alarm(void), Snooze(void),
 		SystemClock_Config(void), MX_GPIO_Init(void), MX_I2C1_Init(void),
 		MX_USB_HOST_Process(void);
 
-//uint16_t
-//	CheckButtons( void );
 
-// STMCube Example declarations.
-// static void USBH_UserProcess(USBH_HandleTypeDef *phost, uint8_t id);
+// IMPORTANT: I made no modifications to the code in between the following two lines of slashes (lines 42-257)
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+static void MSC_Application(void);
 
-static void
-MSC_Application(void);
-
-//static void
-//Error_Handler(void);
-//
 // Global variables
-//
-//RTC_InitTypeDef
-//	ClockInit;				// Structure used to initialize the real time clock
-//
-RTC_TimeTypeDef ClockTime; // Structure to hold/store the current time
+RTC_InitTypeDef ClockInit;	// Structure used to initialize the real time clock
 
-RTC_DateTypeDef ClockDate; // Structure to hold the current date
+RTC_TimeTypeDef ClockTime; 	// Structure to hold/store the current time
 
-RTC_AlarmTypeDef ClockAlarm; // Structure to hold/store the current alarm time
+RTC_DateTypeDef ClockDate; 	// Structure to hold the current date
+
+RTC_AlarmTypeDef ClockAlarm; 	// Structure to hold/store the current alarm time
 
 TIM_HandleTypeDef Timer6_44Khz,	// Structure for the audio play back timer subsystem
-		DisplayTimer;			// Structure for the LED display timer subsystem
+		DisplayTimer;	// Structure for the LED display timer subsystem
 
 DAC_HandleTypeDef AudioDac;	// Structure for the audio digital to analog converter subsystem
 
@@ -81,29 +59,21 @@ DMA_HandleTypeDef AudioDma;	// Structure for the audio DMA direct memory access 
 
 RTC_HandleTypeDef RealTimeClock;// Structure for the real time clock subsystem
 
-I2C_HandleTypeDef	// Structure for I2C subsystem. Used for external audio chip
+I2C_HandleTypeDef		// Structure for I2C subsystem. Used for external audio chip
 I2c;
 
 volatile int DisplayClockModeCount,	// Number of display ticks to show the current clock mode time format
 		PlayMusic = FALSE,		// Flag indicating if music should be played
 		DebounceCount = 0;		// Buttons debounce count
 
-volatile uint16_t ButtonsPushed;// Bit field containing the bits of which buttons have been pushed
+volatile uint16_t ButtonsPushed;	// Bit field containing the bits of which buttons have been pushed
 
 FATFS UsbDiskFatFs;			// File system object for USB disk logical drive
 
 char UsbDiskPath[4];			// USB Host logical drive path
 
-int BcdTime[4],				// Array to hold the hours and minutes in BCD format
-		DisplayedDigit = 0,	// Current digit being displayed on the LED display
-
-		// Current format for the displayed time ( IE 12 or 24 hour format )
-		ClockHourFormat = CLOCK_HOUR_FORMAT_12, AlarmPmFlag = 0, TimePmFlag = 0;
-
-//
 // Functions required for long files names on fat32 partitions
 //
-
 WCHAR ff_convert(WCHAR wch, UINT dir) {
 	if (wch < 0x80) {
 //
@@ -136,14 +106,6 @@ WCHAR ff_wtoupper(WCHAR wch) {
 	return 0;
 }
 
-//
-// Dummy interrupt handler function
-//
-/******************************************************************************************************************************************************
- void TIM6_DAC_IRQHandler(void) {
- HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn);
- }
- ******************************************************************************************************************************************************/
 /*
  * Function: ConfigureAudioDma
  *
@@ -152,7 +114,6 @@ WCHAR ff_wtoupper(WCHAR wch) {
  * Initialize DMA, DAC and timer 6 controllers for a mono channel audio to be played on PA4
  *
  */
-
 void ConfigureAudioDma(void) {
 
 	TIM_MasterConfigTypeDef Timer6MasterConfigSync;
@@ -294,92 +255,9 @@ void ConfigureAudioDma(void) {
 	return;
 }
 
-void ConfigureDisplay(void) {
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	//
-	// Enable clocks for PWR_CLK for RTC, GPIOE, GPIOD, GPIOC and TIM5.
-	//
-	__HAL_RCC_PWR_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOE_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOC_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOA_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOD_CLK_ENABLE()
-	;
-	__HAL_RCC_TIM5_CLK_ENABLE()
-	;
-	//
-	// Enable the LED multiplexing display and push button timer (TIM5) at a frequency of 500Hz
-	//
-	//
-	// Configure GPIO for receiving blue onboard button input
-	// Use pin 0 of port A
-	//
-	GPIO_InitTypeDef GPIO_Init;
-	GPIO_Init.Pin = GPIO_PIN_0;
-	GPIO_Init.Speed = GPIO_SPEED_MEDIUM;
-	GPIO_Init.Mode = GPIO_MODE_INPUT;
-	GPIO_Init.Pull = GPIO_PULLDOWN;
-	GPIO_Init.Alternate = 0;
-	HAL_GPIO_Init( GPIOA, &GPIO_Init);
-	//
-	// Configure GPIO for selecting each segment on a digit.
-	// Use free I/O pins of port E (pin 6 onwards).
-	//
-	GPIO_InitTypeDef GPIO_Init2; //A handle to initialize GPIO port E
-	GPIO_Init2.Pin = GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11
-			| GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
-	GPIO_Init2.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_Init2.Speed = GPIO_SPEED_HIGH;
-	GPIO_Init2.Pull = GPIO_NOPULL;
-	GPIO_Init2.Alternate = 0;
-	HAL_GPIO_Init(GPIOE, &GPIO_Init2);
-	//
-	// Configure GPIO for selecting each digit on the LED display.
-	// Use pin 7 to 11 of port D.
-	//
-	GPIO_InitTypeDef GPIO_Init3;
-	GPIO_Init3.Pin = GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10
-			| GPIO_PIN_11;
-	GPIO_Init3.Speed = GPIO_SPEED_MEDIUM;
-	GPIO_Init3.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_Init3.Pull = GPIO_NOPULL;
-	GPIO_Init3.Alternate = 0;
-	HAL_GPIO_Init( GPIOD, &GPIO_Init3);
-	//
-	// Configure the input pins 4, 5, 8, 9 and 11 of port C for reading the push buttons.
-	// Use internal pull ups to reduce component count
-	//
-	GPIO_InitTypeDef GPIO_Init4;
-	GPIO_Init4.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_8 | GPIO_PIN_9
-			| GPIO_PIN_11;
-	GPIO_Init4.Speed = GPIO_SPEED_MEDIUM;
-	GPIO_Init4.Mode = GPIO_MODE_INPUT;
-	GPIO_Init4.Pull = GPIO_PULLUP;
-	GPIO_Init4.Alternate = 0;
-	HAL_GPIO_Init( GPIOC, &GPIO_Init4);
-
-	GPIO_Init4.Pin = GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15 ;
-	GPIO_Init4.Speed = GPIO_SPEED_MEDIUM;
-	GPIO_Init4.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_Init4.Pull = GPIO_NOPULL;
-	GPIO_Init4.Alternate = 0;
-	HAL_GPIO_Init( GPIOD, &GPIO_Init4);
-	// Enable the real time clock alarm A interrupt
-	//
-
-	//
-	// Enable the timer interrupt
-	//
-
-	//
-	// Enable the LED display and push button timer
-	//
-	//
-}
+// Global Variables for methods I wrote
 
 //variable used in SetTime()
 int settingtime = 0;
@@ -406,6 +284,88 @@ int colonbot = -1;
 int decimalset = -1;
 
 /*
+ * Function: ConfigureDisplay()
+ *
+ * Description: This function initializes GPIO pins and clocks for use by the microcontroller.
+ */
+void ConfigureDisplay(void) {
+
+	//
+	// Enable clocks for PWR_CLK for RTC, GPIOE, GPIOD, GPIOC and TIM5.
+	//
+	__HAL_RCC_PWR_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOE_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOC_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOA_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOD_CLK_ENABLE()
+	;
+	__HAL_RCC_TIM5_CLK_ENABLE()
+	;
+	
+	//
+	// Enable the LED multiplexing display and push button timer (TIM5) at a frequency of 500Hz.
+	// Configure GPIO for receiving blue onboard button input from pin 0 of port A.
+	//
+	GPIO_InitTypeDef GPIO_Init;
+	GPIO_Init.Pin = GPIO_PIN_0;
+	GPIO_Init.Speed = GPIO_SPEED_MEDIUM;
+	GPIO_Init.Mode = GPIO_MODE_INPUT;
+	GPIO_Init.Pull = GPIO_PULLDOWN;
+	GPIO_Init.Alternate = 0;
+	HAL_GPIO_Init( GPIOA, &GPIO_Init);
+	
+	//
+	// Configure GPIO for selecting each segment on a digit.
+	// Use free I/O pins of port E (pin 6 onwards).
+	//
+	GPIO_InitTypeDef GPIO_Init2; //A handle to initialize GPIO port E
+	GPIO_Init2.Pin = GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11
+			| GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
+	GPIO_Init2.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_Init2.Speed = GPIO_SPEED_HIGH;
+	GPIO_Init2.Pull = GPIO_NOPULL;
+	GPIO_Init2.Alternate = 0;
+	HAL_GPIO_Init(GPIOE, &GPIO_Init2);
+	
+	//
+	// Configure GPIO for selecting each digit on the LED display.
+	// Use pin 7 to 11 of port D.
+	//
+	GPIO_InitTypeDef GPIO_Init3;
+	GPIO_Init3.Pin = GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10
+			| GPIO_PIN_11;
+	GPIO_Init3.Speed = GPIO_SPEED_MEDIUM;
+	GPIO_Init3.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_Init3.Pull = GPIO_NOPULL;
+	GPIO_Init3.Alternate = 0;
+	HAL_GPIO_Init( GPIOD, &GPIO_Init3);
+	
+	//
+	// Configure the input pins 4, 5, 8, 9 and 11 of port C for reading the push buttons.
+	// Use internal pull ups to reduce component count
+	//
+	GPIO_InitTypeDef GPIO_Init4;
+	GPIO_Init4.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_8 | GPIO_PIN_9
+			| GPIO_PIN_11;
+	GPIO_Init4.Speed = GPIO_SPEED_MEDIUM;
+	GPIO_Init4.Mode = GPIO_MODE_INPUT;
+	GPIO_Init4.Pull = GPIO_PULLUP;
+	GPIO_Init4.Alternate = 0;
+	HAL_GPIO_Init( GPIOC, &GPIO_Init4);
+
+	GPIO_Init4.Pin = GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15 ;
+	GPIO_Init4.Speed = GPIO_SPEED_MEDIUM;
+	GPIO_Init4.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_Init4.Pull = GPIO_NOPULL;
+	GPIO_Init4.Alternate = 0;
+	HAL_GPIO_Init( GPIOD, &GPIO_Init4);
+}
+
+/*
  * Function: SetDigit()
  *
  * Description: This function accepts the integer value of the digit to be set and the integer value to set this digit to.
@@ -415,7 +375,7 @@ void SetDigit(int Digit, int Number) {
 
 	switch (Digit) {
 
-////First Digit
+	//First Digit
 	case 1:
 
 		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_8, GPIO_PIN_SET); //Digit 1 Select
@@ -540,7 +500,7 @@ void SetDigit(int Digit, int Number) {
 
 		break; //case 1
 
-////Second Digit
+	//Second Digit
 	case 2:
 
 		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_8, GPIO_PIN_RESET); //Digit 1 Select
@@ -790,7 +750,7 @@ void SetDigit(int Digit, int Number) {
 
 		break; //case 3
 
-////Fourth Digit
+	//Fourth Digit
 	case 4:
 
 		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_8, GPIO_PIN_RESET); //Digit 1 Select
@@ -915,7 +875,7 @@ void SetDigit(int Digit, int Number) {
 
 		break; //case 4
 
-////Decimal Point, Colon, and Alarm On/Off indicator
+	//Decimal Point, Colon, and Alarm On/Off indicator
 	case 5:
 		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_8, GPIO_PIN_RESET); //Digit 1 Select
 		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_9, GPIO_PIN_RESET); //Digit 2 Select
@@ -987,22 +947,21 @@ int main(int argc, char* argv[]) {
 	HAL_Init();
 
 	// enable clock for Timer 3
-	__HAL_RCC_TIM3_CLK_ENABLE()
-	;
+	__HAL_RCC_TIM3_CLK_ENABLE();
 
 	TIM_HandleTypeDef s_TimerInstance; // define a handle to initialize timer
 	s_TimerInstance.Instance = TIM3; // Point to Timer 3
 	s_TimerInstance.Init.Prescaler = 8399; // Timer clock frequency is 84 MHz.
-	// This prescaler will give 10 kHz timing_tick_frequency
+					       // This prescaler will give 10 kHz timing_tick_frequency
 	s_TimerInstance.Init.CounterMode = TIM_COUNTERMODE_UP;
 	s_TimerInstance.Init.Period = 9999; // To count until 1 sec
-	// http://cerdemir.com/timers-in-stm32f4-discovery.
-	//see the above link for Prescaler and period settings
 	s_TimerInstance.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	s_TimerInstance.Init.RepetitionCounter = 0;
 	HAL_TIM_Base_Init(&s_TimerInstance); // Initialize timer with above parameters
 	HAL_TIM_Base_Start(&s_TimerInstance); // start timer
 
+// IMPORTANT: We were given the order in which to call the functions enclosed between the following lines of slashes (lines 965-989)
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
 	// Configure the system clock
 	SystemClock_Config();
 
@@ -1011,13 +970,6 @@ int main(int argc, char* argv[]) {
 
 	// Enable the serial debug port. This allows for text messages to be sent via the STlink virtual communications port to the host computer.
 	DebugPortInit();
-
-	// Display project name with version number
-	trace_puts("*\n"
-			"*\n"
-			"* Alarm clock project for stm32f4discovery board V2.00\n"
-			"*\n"
-			"*\n");
 
 	// Initialize the I2C port for the external CODEC
 	MX_I2C1_Init();
@@ -1034,25 +986,16 @@ int main(int argc, char* argv[]) {
 	ConfigureAudioDma();
 
 	// Initialize the seven segment display pins
-	ConfigureDisplay();
+	ConfigureDisplay();	
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
 
-	// Send a greeting to the trace device (skipped on Release).
+	// Send a greeting to the trace device
 	trace_puts("Initialization Complete");
-
-	// At this stage the system clock should have already been configured at high speed.
-	trace_printf("System clock: %u Hz\n", SystemCoreClock);
 
 	// Start the system timer
 	timer_start();
-
-	blink_led_init();
-
+	
 	while (1) {
-
-		//testing button debounce circuit
-		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_4) == 0) {
-			HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
-		}
 
 		//Check if one minute has passed
 		if (__HAL_TIM_GET_FLAG(&s_TimerInstance, TIM_FLAG_UPDATE) != RESET) { //check if timer period flag is set
@@ -1170,256 +1113,6 @@ int main(int argc, char* argv[]) {
 	} //while
 
 } //main
-
-/** System Clock Configuration
- */
-void SystemClock_Config(void) {
-
-	RCC_OscInitTypeDef RCC_OscInitStruct;
-	RCC_ClkInitTypeDef RCC_ClkInitStruct;
-	RCC_PeriphCLKInitTypeDef PeriphClkInitStruct;
-
-	__HAL_RCC_PWR_CLK_ENABLE()
-	;
-
-	__HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-
-	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-	RCC_OscInitStruct.PLL.PLLM = 4;
-	RCC_OscInitStruct.PLL.PLLN = 168;
-	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-	RCC_OscInitStruct.PLL.PLLQ = 7;
-	HAL_RCC_OscConfig(&RCC_OscInitStruct);
-
-	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
-			| RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
-	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
-	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
-	HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5);
-
-	PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
-	PeriphClkInitStruct.PLLI2S.PLLI2SN = 192;
-	PeriphClkInitStruct.PLLI2S.PLLI2SR = 2;
-	HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct);
-
-	HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000);
-
-	HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
-
-	/* SysTick_IRQn interrupt configuration */
-	HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
-}
-
-/* I2C1 init function */
-void MX_I2C1_Init(void) {
-
-	I2c.Instance = I2C1;
-	I2c.Init.ClockSpeed = 100000;
-	I2c.Init.DutyCycle = I2C_DUTYCYCLE_2;
-	I2c.Init.OwnAddress1 = 0;
-	I2c.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-	I2c.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-	I2c.Init.OwnAddress2 = 0;
-	I2c.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-	I2c.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-	HAL_I2C_Init(&I2c);
-
-}
-
-void MX_GPIO_Init(void) {
-
-	GPIO_InitTypeDef GPIO_InitStruct;
-
-	/* GPIO Ports Clock Enable */
-	__HAL_RCC_GPIOE_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOC_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOH_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOA_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOB_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOD_CLK_ENABLE()
-	;
-
-	GPIO_InitStruct.Pin = GPIO_PIN_4;
-	GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-	/*Configure GPIO pin Output Level */
-	HAL_GPIO_WritePin(CS_I2C_SPI_GPIO_Port, CS_I2C_SPI_Pin, GPIO_PIN_RESET);
-
-	/*Configure GPIO pin Output Level */
-	HAL_GPIO_WritePin(OTG_FS_PowerSwitchOn_GPIO_Port, OTG_FS_PowerSwitchOn_Pin,
-			GPIO_PIN_RESET);
-
-	/*Configure GPIO pin Output Level */
-	HAL_GPIO_WritePin(GPIOD,
-	LD4_Pin | LD3_Pin | LD5_Pin | LD6_Pin | Audio_RST_Pin, GPIO_PIN_RESET);
-
-	/*Configure GPIO pin : CS_I2C_SPI_Pin */
-	GPIO_InitStruct.Pin = CS_I2C_SPI_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-
-	HAL_GPIO_Init(CS_I2C_SPI_GPIO_Port, &GPIO_InitStruct);
-	HAL_GPIO_Init( GPIOC, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : OTG_FS_PowerSwitchOn_Pin */
-	GPIO_InitStruct.Pin = OTG_FS_PowerSwitchOn_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(OTG_FS_PowerSwitchOn_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : PDM_OUT_Pin */
-	GPIO_InitStruct.Pin = PDM_OUT_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	GPIO_InitStruct.Alternate = GPIO_AF5_SPI2;
-	HAL_GPIO_Init(PDM_OUT_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : B1_Pin */
-	GPIO_InitStruct.Pin = B1_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pins : PA5 PA6 PA7 */
-	GPIO_InitStruct.Pin = GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : BOOT1_Pin */
-	GPIO_InitStruct.Pin = BOOT1_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(BOOT1_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : CLK_IN_Pin */
-	GPIO_InitStruct.Pin = CLK_IN_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	GPIO_InitStruct.Alternate = GPIO_AF5_SPI2;
-	HAL_GPIO_Init(CLK_IN_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pins : LD4_Pin LD3_Pin LD5_Pin LD6_Pin
-	 Audio_RST_Pin */
-	GPIO_InitStruct.Pin = LD4_Pin | LD3_Pin | LD5_Pin | LD6_Pin | Audio_RST_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : OTG_FS_OverCurrent_Pin */
-	GPIO_InitStruct.Pin = OTG_FS_OverCurrent_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(OTG_FS_OverCurrent_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : MEMS_INT2_Pin */
-	GPIO_InitStruct.Pin = MEMS_INT2_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(MEMS_INT2_GPIO_Port, &GPIO_InitStruct);
-
-}
-
-/**
- * @brief  Main routine for Mass Storage Class
- * @param  None
- * @retval None
- */
-
-static void MSC_Application(void) {
-	FRESULT Result; // FatFs function common result code
-
-	//
-	// Mount the flash drive using a fat file format
-	//
-
-	Result = f_mount(&UsbDiskFatFs, (TCHAR const*) USBH_Path, 0);
-	if (FR_OK == Result) {
-
-		//
-		// File system successfully mounted, play all the music files in the directory.
-		//
-		while (HAL_GPIO_ReadPin(GPIOC, button_set_alarm) == 1) {
-			PlayDirectory("", 0);
-		}
-	} else {
-		//
-		// FatFs Initialization Error
-		//
-		//	Error_Handler();
-	}
-
-	//
-	// Unlink the USB disk I/O driver
-	//
-	FATFS_UnLinkDriver(UsbDiskPath);
-}
-
-/*********************************************************************************************************************************************************
- * Function: TIM5_IRQHandler
- *
- * Description:
- *
- * Timer interrupt handler that is called at a rate of 500Hz. This function polls the time and
- * displays it on the 7 segment display. It also checks for button presses and handles any bounce conditions.
- *
-
- void TIM5_IRQHandler(void) {
-
- }
- *********************************************************************************************************************************************************/
-
-/*
- * Function: RTC_Alarm_IRQHandler
- *
- * Description:
- *
- * When alarm occurs, clear all the interrupt bits and flags then start playing music.
- *
- */
-void RTC_Alarm_IRQHandler(void) {
-
-//
-// Verify that this is a real time clock interrupt
-//
-	if ( __HAL_RTC_ALARM_GET_IT( &RealTimeClock, RTC_IT_ALRA ) != RESET) {
-
-//
-// Clear the alarm flag and the external interrupt flag
-//
-		__HAL_RTC_ALARM_CLEAR_FLAG(&RealTimeClock, RTC_FLAG_ALRAF);
-		__HAL_RTC_EXTI_CLEAR_FLAG(RTC_EXTI_LINE_ALARM_EVENT);
-
-//
-// Restore the alarm to it's original time. This could have been a snooze alarm
-//
-		HAL_RTC_SetAlarm_IT(&RealTimeClock, &ClockAlarm, RTC_FORMAT_BCD);
-
-		PlayMusic = TRUE;
-
-	}
-
-}
 
 /*
  * Function: SetTime
@@ -1710,14 +1403,6 @@ void SetAlarm(void) {
  */
 void Alarm(void) {
 
-/*	while (1) {
-		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
-		HAL_Delay(500);
-		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
-		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
-		HAL_GPIO_WritePin( GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
-	}
-*/
 	// Wait until the drive is mounted before we can play some music
 	do {
 		MX_USB_HOST_Process();
@@ -1729,9 +1414,8 @@ void Alarm(void) {
 
 	//	checks for the alarm interrupt and call the music playing module
 	while ( TRUE == PlayMusic) {
-
 		MSC_Application();
-
+		
 		//if set alarm button is pushed disable the alarm
 		if (HAL_GPIO_ReadPin(GPIOC, button_set_alarm) == 0) {
 			alarmd1 = -1;
@@ -1743,7 +1427,6 @@ void Alarm(void) {
 			//Snooze the alarm and stop playing music if snooze button pressed
 
 		} //if set alarm pressed
-
 			if (HAL_GPIO_ReadPin(GPIOC, button_snooze) == 0) {
 				Snooze();
 				PlayMusic = FALSE;
@@ -1775,12 +1458,244 @@ void Snooze(void) {
 
 } //Snooze()
 
-//static void Error_Handler(void)
-//{
-//while(1)
-//	{
-//	}
-//}
-#pragma GCC diagnostic pop
 
-// ----------------------------------------------------------------------------
+// IMPORTANT: I made no modifications to rest of the code (lines 1464-1700)
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/** System Clock Configuration
+ */
+void SystemClock_Config(void) {
+
+	RCC_OscInitTypeDef RCC_OscInitStruct;
+	RCC_ClkInitTypeDef RCC_ClkInitStruct;
+	RCC_PeriphCLKInitTypeDef PeriphClkInitStruct;
+
+	__HAL_RCC_PWR_CLK_ENABLE()
+	;
+
+	__HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	RCC_OscInitStruct.PLL.PLLM = 4;
+	RCC_OscInitStruct.PLL.PLLN = 168;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+	RCC_OscInitStruct.PLL.PLLQ = 7;
+	HAL_RCC_OscConfig(&RCC_OscInitStruct);
+
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+			| RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+	HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5);
+
+	PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
+	PeriphClkInitStruct.PLLI2S.PLLI2SN = 192;
+	PeriphClkInitStruct.PLLI2S.PLLI2SR = 2;
+	HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct);
+
+	HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000);
+
+	HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+
+	/* SysTick_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+}
+
+/* I2C1 init function */
+void MX_I2C1_Init(void) {
+
+	I2c.Instance = I2C1;
+	I2c.Init.ClockSpeed = 100000;
+	I2c.Init.DutyCycle = I2C_DUTYCYCLE_2;
+	I2c.Init.OwnAddress1 = 0;
+	I2c.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+	I2c.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+	I2c.Init.OwnAddress2 = 0;
+	I2c.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+	I2c.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+	HAL_I2C_Init(&I2c);
+
+}
+
+void MX_GPIO_Init(void) {
+
+	GPIO_InitTypeDef GPIO_InitStruct;
+
+	/* GPIO Ports Clock Enable */
+	__HAL_RCC_GPIOE_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOC_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOH_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOA_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOB_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOD_CLK_ENABLE()
+	;
+
+	GPIO_InitStruct.Pin = GPIO_PIN_4;
+	GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(CS_I2C_SPI_GPIO_Port, CS_I2C_SPI_Pin, GPIO_PIN_RESET);
+
+	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(OTG_FS_PowerSwitchOn_GPIO_Port, OTG_FS_PowerSwitchOn_Pin,
+			GPIO_PIN_RESET);
+
+	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(GPIOD,
+	LD4_Pin | LD3_Pin | LD5_Pin | LD6_Pin | Audio_RST_Pin, GPIO_PIN_RESET);
+
+	/*Configure GPIO pin : CS_I2C_SPI_Pin */
+	GPIO_InitStruct.Pin = CS_I2C_SPI_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+
+	HAL_GPIO_Init(CS_I2C_SPI_GPIO_Port, &GPIO_InitStruct);
+	HAL_GPIO_Init( GPIOC, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : OTG_FS_PowerSwitchOn_Pin */
+	GPIO_InitStruct.Pin = OTG_FS_PowerSwitchOn_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(OTG_FS_PowerSwitchOn_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : PDM_OUT_Pin */
+	GPIO_InitStruct.Pin = PDM_OUT_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	GPIO_InitStruct.Alternate = GPIO_AF5_SPI2;
+	HAL_GPIO_Init(PDM_OUT_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : B1_Pin */
+	GPIO_InitStruct.Pin = B1_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pins : PA5 PA6 PA7 */
+	GPIO_InitStruct.Pin = GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : BOOT1_Pin */
+	GPIO_InitStruct.Pin = BOOT1_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(BOOT1_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : CLK_IN_Pin */
+	GPIO_InitStruct.Pin = CLK_IN_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	GPIO_InitStruct.Alternate = GPIO_AF5_SPI2;
+	HAL_GPIO_Init(CLK_IN_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pins : LD4_Pin LD3_Pin LD5_Pin LD6_Pin
+	 Audio_RST_Pin */
+	GPIO_InitStruct.Pin = LD4_Pin | LD3_Pin | LD5_Pin | LD6_Pin | Audio_RST_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : OTG_FS_OverCurrent_Pin */
+	GPIO_InitStruct.Pin = OTG_FS_OverCurrent_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(OTG_FS_OverCurrent_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : MEMS_INT2_Pin */
+	GPIO_InitStruct.Pin = MEMS_INT2_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(MEMS_INT2_GPIO_Port, &GPIO_InitStruct);
+
+}
+
+/**
+ * @brief  Main routine for Mass Storage Class
+ * @param  None
+ * @retval None
+ */
+
+static void MSC_Application(void) {
+	FRESULT Result; // FatFs function common result code
+
+	//
+	// Mount the flash drive using a fat file format
+	//
+
+	Result = f_mount(&UsbDiskFatFs, (TCHAR const*) USBH_Path, 0);
+	if (FR_OK == Result) {
+
+		//
+		// File system successfully mounted, play all the music files in the directory.
+		//
+		while (HAL_GPIO_ReadPin(GPIOC, button_set_alarm) == 1) {
+			PlayDirectory("", 0);
+		}
+	} else {
+		//
+		// FatFs Initialization Error
+		//
+		//	Error_Handler();
+	}
+
+	//
+	// Unlink the USB disk I/O driver
+	//
+	FATFS_UnLinkDriver(UsbDiskPath);
+}
+
+/*
+ * Function: RTC_Alarm_IRQHandler
+ *
+ * Description:
+ *
+ * When alarm occurs, clear all the interrupt bits and flags then start playing music.
+ *
+ */
+void RTC_Alarm_IRQHandler(void) {
+
+//
+// Verify that this is a real time clock interrupt
+//
+	if ( __HAL_RTC_ALARM_GET_IT( &RealTimeClock, RTC_IT_ALRA ) != RESET) {
+
+//
+// Clear the alarm flag and the external interrupt flag
+//
+		__HAL_RTC_ALARM_CLEAR_FLAG(&RealTimeClock, RTC_FLAG_ALRAF);
+		__HAL_RTC_EXTI_CLEAR_FLAG(RTC_EXTI_LINE_ALARM_EVENT);
+
+//
+// Restore the alarm to it's original time. This could have been a snooze alarm
+//
+		HAL_RTC_SetAlarm_IT(&RealTimeClock, &ClockAlarm, RTC_FORMAT_BCD);
+
+		PlayMusic = TRUE;
+
+	}
+
+}
+#pragma GCC diagnostic pop
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
