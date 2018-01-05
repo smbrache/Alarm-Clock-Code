@@ -2,7 +2,7 @@
 
 This software was written to implement a fully functional alarm clock using an STM microcontroller for a school project in the summer of 2017. The alarm clock allowed users to set the current time and time of the alarm, snooze the alarm or turn it off completely, and played an MP3 file from a USB thumb drive when the alarm was set to go off. 
 
-**NOTE: I did not write all of this code. Code I did not write is identified as such in main.c, and **
+**NOTE: I did not write all of this code. Code I did not write is identified as such in main.c**
 
 ### Technical Skills
 
