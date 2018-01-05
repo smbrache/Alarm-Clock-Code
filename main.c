@@ -1,6 +1,7 @@
 
 //
 // Parts of this file that I did not write are part of the GNU ARM Eclipse distribution, and are identified herein.
+// I have removed some unused parts of the file I did not write, and changed some of the formatting.
 // Copyright (c) 2014 Liviu Ionescu.
 //
 
